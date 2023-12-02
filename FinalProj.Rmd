@@ -1,0 +1,169 @@
+---
+title: "Final Project"
+author: "Michael Jenks"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(DataComputing)
+library(party)
+```
+
+# Research Question: 
+Are there any trends we can identify in fantasy football statistics over the last 10 years?
+
+# Notes:
+  + Fantasy Data and NFL Standings were recorded as of Week 9 in 2023 
+  + Fantasy Points were recorded in PPR format, meaning players get 1 point per reception
+  + As of 2021, 17 games played per team (Before 2021 - 16)
+  + QB = Quarterback, RB = Running Back, WR = Wide Reciever, TE = Tight End
+  
+  
+To begin we will read the data into the work space:
+```{r}
+nflstandings <- read.csv("nflstandings.csv")
+fantasydata <- read.csv("fantasydata.csv")
+
+head(nflstandings)
+head(fantasydata)
+```
+
+As an introductory analysis, lets take a look at this year's fantasy points by position:
+
+```{r}
+fantasy2023 <- fantasydata %>%
+  group_by(Year, FantPos) %>%
+  filter(Year == 2023) %>%
+  summarise(totPointsPerYear = sum(Fantasy.Points)) %>%
+  mutate(total = sum(totPointsPerYear)) %>%
+  mutate(PropofPoints = totPointsPerYear/total)
+fantasy2023
+
+```
+```{r}
+ggplot(data = fantasy2023) +
+  geom_col(aes(x = FantPos, y = totPointsPerYear))
+
+```
+From this analysis, we see RBs and WRs have carried the majority of fantasy points scored this year. Lets compare this result to the previous 9 years:
+```{r}
+fantasyOther9 <- fantasydata %>%
+  group_by(Year, FantPos) %>%
+  filter(Year != 2023) %>%
+  summarise(totPointsPerYear = sum(Fantasy.Points))
+fantasyOther9
+```
+```{r}
+ggplot(data = fantasyOther9) +
+  geom_col(aes(x = FantPos, y = totPointsPerYear)) +
+  facet_grid(~ Year) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+The above plots show a similar principle. In terms of fantasy points scored, running backs and wide receivers have been the top 2 scoring positions. In only one year did running backs outscore wide receivers. 
+
+
+Using a join, we will attempt to analyze how wins correlate with fantasy points. First lets get the total number of fantasy points per team per year:
+
+```{r}
+teamPts <- fantasydata %>%
+  group_by(Year, Tm) %>%
+  summarise(totalFantPoints = sum(Fantasy.Points))
+teamPts
+```
+```{r}
+team <- teamPts %>%
+  left_join(nflstandings)
+team
+```
+Using this table we'll combine all the teams from every year into one row for each, counting their wins and fantasy points:
+
+```{r}
+winsPoints <- team %>%
+  group_by(Tm) %>%
+  summarise(totalWins = sum(W), FanPts = sum(totalFantPoints))
+winsPoints
+```
+```{r}
+ggplot(data = winsPoints, aes(x = totalWins,y = FanPts)) +
+  geom_point() 
+ 
+```
+Clearly, we see with this plot that wins have a positive relationship with fantasy points. We can also calculate the correlation to quantify this result:
+```{r}
+cor(winsPoints$totalWins, winsPoints$FanPts)
+```
+This correlation is very high and positive, further proving the strong, positive relationship seen in the plot. 
+
+We can also look at this plot through each division, since each team having their own aesthetic on one plot can create data that is hard to read (i.e. making each team a color):
+```{r}
+divPoints <- team %>%
+  group_by(Division) %>%
+  summarise(totalWins = sum(W), FanPts = sum(totalFantPoints))
+divPoints
+```
+```{r}
+ggplot(data = divPoints) +
+  geom_point(aes(x = totalWins, y = FanPts, color = Division)) 
+```
+
+Once again, we see a positive relationship between wins and fantasy points scored per division. There appears to be a few unusual points. There could be many reasons for this. The most likely is that a team performed poorly compared to the rest of the division, inflating or deflating the results. 
+
+```{r}
+divPoints %>%
+  ggplot(aes(x = Division, y = totalWins)) + 
+  geom_bar(stat = "identity", fill = "gray", color = NA) +
+  geom_point(data = team, aes(x = Division, y = Pts)) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+```
+The layered graphic above shows the number of wins each division recorded since 2014. The dots represent the number of points scored for each team in that division accounting for every year. From this graphic, we see that the AFC West division seems to have the most wins since 2014 and when looking at the dots, we see that the AFC west has been one of the best at scoring points. Overall they were much more consistent than say the AFC North and AFC East whos ceilings were lower than the AFC West in terms of points scored. 
+
+Let's take a look at fantasy stats of players who's name starts with a certain letter. Lets select A, B, and C.  
+
+```{r}
+pattern <- "^A."
+StartwA <- fantasydata %>%
+  filter(grepl(pattern, Player))
+StartwA
+```
+
+```{r}
+pattern <- "^B."
+StartwB <- fantasydata %>%
+  filter(grepl(pattern, Player))
+StartwB
+```
+```{r}
+pattern <- "^C."
+StartwC <- fantasydata %>%
+  filter(grepl(pattern, Player))
+StartwC
+```
+Summary Statistics for Each
+```{r}
+StartwA %>%
+  summarise(avgPtsA = mean(Fantasy.Points))
+StartwB %>%
+  summarise(avgPtsB = mean(Fantasy.Points))
+StartwC %>%
+  summarise(avgPtsC = mean(Fantasy.Points))
+```
+From this introductory analysis, we can conclude that over the past 10 years, Players names who  starts with A have had more success in fantasy football than players with names starting with B or C.
+
+For the final part of the project, lets use machine learning to see what variables are having the most impact on our response variable, fantasy points. 
+```{r}
+fantasydata <- fantasydata %>%
+  mutate(totYards = Rush.Yds + Yds.Passing + Rec.Yards)
+```
+
+```{r}
+fantasyModel <- lm(Fantasy.Points ~ Tot.TD + factor(FantPos) + totYards + Receptions, data = fantasydata)
+fantasyModel$coefficients
+```
+```{r}
+summary(fantasyModel)
+```
+Through machine learning, we are able to create a regression model to try to describe fantasy points through some other variables. The model coefficients tell us how much average fantasy points increase for a unit change in that variable. For example, For every touchdown a player scores, the average fantasy points will increase by 6.78. All of the coefficients are positive, meaning as they increase so does average fantasy points. 
